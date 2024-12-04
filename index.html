@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Reliable Camera OCR Scanner with Enhanced Filtering</title>
+    <title>Reliable Centered Rectangular OCR Scanner</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
@@ -15,10 +15,9 @@
         }
         /* Container Styling */
         #container {
-            position: relative; /* Ensure overlay is positioned relative to the container */
+            position: relative; /* Relative positioning for overlay */
             width: 100%;
             height: 100%;
-            overflow: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -26,7 +25,7 @@
         }
         /* Video Styling */
         video {
-            width: 90%;
+            width: 80%;
             max-width: 800px;
             border: 2px solid #333;
             border-radius: 8px;
@@ -35,15 +34,16 @@
         /* ROI Overlay Styling */
         #overlay {
             position: absolute;
-            width: 500px; /* Increased width for rectangle */
-            height: 200px; /* Maintained height */
+            width: 60%; /* 60% of the video width for responsiveness */
+            max-width: 600px; /* Maximum width */
+            height: 200px; /* Fixed height */
             border: 4px solid red;
             border-radius: 8px;
-            pointer-events: none;
+            pointer-events: none; /* Allows clicks to pass through */
             transition: border-color 0.3s ease;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%, -50%); /* Centers the overlay */
         }
         /* Controls Styling */
         #controls {
@@ -78,7 +78,7 @@
         /* Output Textarea Styling */
         #output {
             margin-top: 20px;
-            width: 90%;
+            width: 80%;
             max-width: 800px;
             height: 150px;
             padding: 10px;
@@ -107,8 +107,8 @@
         #debugCanvas {
             margin-top: 20px;
             border: 1px solid #000;
-            display: block; /* Make visible for debugging */
-            max-width: 90%;
+            display: block; /* Visible for debugging */
+            max-width: 80%;
             height: auto;
         }
     </style>
@@ -157,7 +157,7 @@
         async function initCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { exact: "environment" } },
+                    video: { facingMode: { exact: "environment" } }, // Prefer rear camera
                     audio: false
                 });
                 video.srcObject = stream;
@@ -177,12 +177,6 @@
             // Get the image data from the canvas
             let imageData = ctx.getImageData(0, 0, width, height);
             let data = imageData.data;
-
-            // Convert to grayscale (optional)
-            for (let i = 0; i < data.length; i += 4) {
-                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                data[i] = data[i + 1] = data[i + 2] = avg;
-            }
 
             // Enhance contrast (simple contrast adjustment)
             const contrastFactor = 1.3; // Adjust as needed
@@ -280,7 +274,7 @@
             const roiWidth = overlayRect.width * scaleX;
             const roiHeight = overlayRect.height * scaleY;
 
-            console.log(`ROI Coordinates: (${roiX}, ${roiY}, ${roiWidth}, ${roiHeight})`);
+            console.log(`ROI Coordinates: (${roiX.toFixed(2)}, ${roiY.toFixed(2)}, ${roiWidth.toFixed(2)}, ${roiHeight.toFixed(2)})`);
 
             // Ensure ROI is within the video frame
             if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > videoWidth || (roiY + roiHeight) > videoHeight) {
@@ -383,7 +377,6 @@
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
-            clearInterval(scanInterval);
         });
     </script>
 </body>
