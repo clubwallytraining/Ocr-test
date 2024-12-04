@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Camera OCR Scanner</title>
+    <title>Camera OCR Scanner</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
@@ -30,7 +30,6 @@
             height: auto;
             max-height: 80vh;
             background-color: #000;
-            transform: scaleX(-1); /* Mirror the video for better UX */
         }
         #overlay {
             position: absolute;
@@ -135,15 +134,36 @@
                 data[i] = data[i + 1] = data[i + 2] = avg;
             }
 
-            // Apply thresholding (binary image)
-            for (let i = 0; i < data.length; i += 4) {
-                let brightness = data[i];
-                let threshold = 128;
-                let value = brightness > threshold ? 255 : 0;
-                data[i] = data[i + 1] = data[i + 2] = value;
+            // Apply adaptive thresholding
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let index = (y * width + x) * 4;
+                    let pixel = data[index];
+                    // Simple adaptive threshold: compare to local average
+                    let localAvg = getLocalAverage(data, x, y, width, height);
+                    data[index] = data[index + 1] = data[index + 2] = (pixel > localAvg) ? 255 : 0;
+                }
             }
 
             ctx.putImageData(imageData, 0, 0);
+        }
+
+        // Helper function to calculate local average brightness
+        function getLocalAverage(data, x, y, width, height, region = 10) {
+            let sum = 0;
+            let count = 0;
+            for (let dy = -region; dy <= region; dy++) {
+                for (let dx = -region; dx <= region; dx++) {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        let index = (ny * width + nx) * 4;
+                        sum += data[index];
+                        count++;
+                    }
+                }
+            }
+            return sum / count;
         }
 
         // Function to start scanning
@@ -167,10 +187,6 @@
                 canvas.width = videoWidth;
                 canvas.height = videoHeight;
                 const ctx = canvas.getContext('2d');
-
-                // Mirror the image to match the mirrored video display
-                ctx.translate(videoWidth, 0);
-                ctx.scale(-1, 1);
 
                 ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
 
@@ -210,7 +226,6 @@
                     const { data: { text }, confidence } = await Tesseract.recognize(roiCanvas, 'eng', { 
                         logger: m => console.log(m),
                         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ', // Allow space
-                        // You can add more configuration options here
                     });
 
                     console.log(`Confidence: ${confidence}`);
@@ -218,11 +233,13 @@
 
                     if (text.trim().length > 0) {
                         overlay.style.borderColor = 'green';
-                        // Append the extracted text to the output field
-                        output.value += text.trim() + '\n';
+                        // Append the extracted text to the output field if not already present
+                        if (!output.value.includes(text.trim())) {
+                            output.value += text.trim() + '\n';
+                        }
                     } else {
                         overlay.style.borderColor = 'red';
-                        // Optionally, you can clear the output or notify the user
+                        // Optionally, you can notify the user or take other actions
                         // output.value = 'No text detected.';
                     }
                 } catch (err) {
@@ -230,7 +247,7 @@
                     showError('An error occurred while processing the image.');
                     overlay.style.borderColor = 'red';
                 }
-            }, 1000); // Reduced interval to 1 second for faster scanning
+            }, 1000); // 1-second interval for faster scanning
         }
 
         // Function to stop scanning
