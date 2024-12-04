@@ -190,17 +190,25 @@
 
                 // Define ROI dimensions based on overlay position
                 const overlayRect = overlay.getBoundingClientRect();
-                const containerRect = document.getElementById('container').getBoundingClientRect();
+                const videoRect = video.getBoundingClientRect();
 
                 // Calculate scaling factors between video display size and actual video size
-                const scaleX = videoWidth / containerRect.width;
-                const scaleY = videoHeight / containerRect.height;
+                const scaleX = videoWidth / videoRect.width;
+                const scaleY = videoHeight / videoRect.height;
 
-                // Calculate ROI coordinates
-                const roiX = (overlayRect.left - containerRect.left) * scaleX;
-                const roiY = (overlayRect.top - containerRect.top) * scaleY;
+                // Calculate ROI coordinates relative to the video
+                const roiX = (overlayRect.left - videoRect.left) * scaleX;
+                const roiY = (overlayRect.top - videoRect.top) * scaleY;
                 const roiWidth = overlayRect.width * scaleX;
                 const roiHeight = overlayRect.height * scaleY;
+
+                // Ensure ROI is within the video frame
+                if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > videoWidth || (roiY + roiHeight) > videoHeight) {
+                    console.warn('ROI is out of video frame bounds.');
+                    showError('ROI is out of video frame bounds.');
+                    stopScanning();
+                    return;
+                }
 
                 // Extract ROI from the processed image
                 let roiCanvas = document.createElement('canvas');
