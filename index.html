@@ -5,8 +5,6 @@
     <title>Centered Rectangular OCR Scanner</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
-    <!-- OpenCV.js CDN -->
-    <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript" onload="onOpenCvReady();" ></script>
     <style>
         /* Reset and Base Styles */
         * {
@@ -53,7 +51,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%); /* Centers the overlay */
-            /* display: none; */ /* Kept visible at all times */
+            /* Removed display: none; to keep ROI visible at all times */
         }
 
         /* Controls Styling */
@@ -126,11 +124,6 @@
             height: auto;
         }
     </style>
-    <script>
-        function onOpenCvReady() {
-            console.log('OpenCV.js is ready.');
-        }
-    </script>
 </head>
 <body>
     <div id="errorMsg"></div>
@@ -220,33 +213,6 @@
             // Put the processed data back onto the canvas
             ctx.putImageData(imageData, 0, 0);
             console.log('Image preprocessing complete.');
-        }
-
-        // Function to perform text detection using OpenCV.js
-        function detectTextInROI() {
-            // Get the ROI image data from the scaledCanvas
-            const src = cv.imread(scaledCanvas);
-            const gray = new cv.Mat();
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-
-            // Apply MSER to detect regions
-            const mser = new cv.MSER();
-            let regions = new cv.MatVector();
-            let bboxes = new cv.RectVector();
-            mser.detectRegions(gray, regions, bboxes);
-
-            // Get the number of detected regions
-            const numberOfRegions = regions.size();
-            console.log(`Number of text regions detected: ${numberOfRegions}`);
-
-            // Clean up
-            src.delete();
-            gray.delete();
-            mser.delete();
-            regions.delete();
-            bboxes.delete();
-
-            return numberOfRegions > 0;
         }
 
         // Function to perform OCR
@@ -355,27 +321,17 @@
             debugCtx.drawImage(scaledCanvas, 0, 0);
             console.log('Debugging canvas updated.');
 
-            // Perform text detection before OCR
-            const hasText = detectTextInROI();
-            if (hasText) {
-                console.log('Text detected in ROI. Proceeding with OCR.');
-                // Convert the canvas to a blob for OCR
-                scaledCanvas.toBlob(async (blob) => {
-                    if (blob) {
-                        console.log('Blob created for OCR.');
-                        await performOCR(blob);
-                    } else {
-                        console.warn('Blob conversion failed.');
-                    }
-                    // Schedule the next frame processing
-                    requestAnimationFrame(processFrame);
-                }, 'image/png');
-            } else {
-                console.log('No text detected in ROI. Skipping OCR.');
-                overlay.style.borderColor = 'red';
+            // Convert the canvas to a blob for OCR
+            scaledCanvas.toBlob(async (blob) => {
+                if (blob) {
+                    console.log('Blob created for OCR.');
+                    await performOCR(blob);
+                } else {
+                    console.warn('Blob conversion failed.');
+                }
                 // Schedule the next frame processing
                 requestAnimationFrame(processFrame);
-            }
+            }, 'image/png');
         }
 
         // Function to start scanning
@@ -433,11 +389,6 @@
 
         // Handle start button click
         startButton.addEventListener('click', () => {
-            // Ensure OpenCV.js is loaded before starting
-            if (typeof cv === 'undefined') {
-                showError('OpenCV.js is not loaded yet. Please try again in a moment.');
-                return;
-            }
             startScanning();
         });
 
