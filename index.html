@@ -152,8 +152,14 @@
         let stream = null;
         let scanning = false;
         let lastScanTime = 0;
-        const MIN_INTERVAL = 2000; // 2 seconds between scans
+        const MIN_INTERVAL = 500; // Reduced to 0.5 seconds between scans
         const MIN_CONFIDENCE = 60; // Minimum confidence percentage to accept OCR result
+
+        // Pre-created canvases for reuse
+        const videoCanvas = document.createElement('canvas');
+        const roiCanvas = document.createElement('canvas');
+        const scaledCanvas = document.createElement('canvas');
+        const debugCtx = debugCanvas.getContext('2d');
 
         // Function to display error messages
         function showError(message) {
@@ -182,7 +188,12 @@
         }
 
         // Function to preprocess image for better OCR accuracy
-        function preprocessImage(videoCanvas, width, height) {
+        function preprocessImage() {
+            const width = video.videoWidth;
+            const height = video.videoHeight;
+
+            videoCanvas.width = width;
+            videoCanvas.height = height;
             const ctx = videoCanvas.getContext('2d');
             ctx.drawImage(video, 0, 0, width, height);
             console.log('Image drawn on videoCanvas.');
@@ -264,24 +275,16 @@
 
             console.log('Processing a new frame for OCR.');
 
-            // Set canvas dimensions to match video
-            const videoWidth = video.videoWidth;
-            const videoHeight = video.videoHeight;
-            const videoCanvas = document.createElement('canvas');
-            videoCanvas.width = videoWidth;
-            videoCanvas.height = videoHeight;
-            const videoCtx = videoCanvas.getContext('2d');
-
             // Preprocess the image
-            preprocessImage(videoCanvas, videoWidth, videoHeight);
+            preprocessImage();
 
             // Define ROI dimensions based on overlay position
             const overlayRect = overlay.getBoundingClientRect();
             const videoRect = video.getBoundingClientRect();
 
             // Calculate scaling factors between video display size and actual video size
-            const scaleX = videoWidth / videoRect.width;
-            const scaleY = videoHeight / videoRect.height;
+            const scaleX = video.videoWidth / videoRect.width;
+            const scaleY = video.videoHeight / videoRect.height;
 
             // Calculate ROI coordinates relative to the video
             const roiX = (overlayRect.left - videoRect.left) * scaleX;
@@ -292,7 +295,7 @@
             console.log(`ROI Coordinates: (${roiX.toFixed(2)}, ${roiY.toFixed(2)}, ${roiWidth.toFixed(2)}, ${roiHeight.toFixed(2)})`);
 
             // Ensure ROI is within the video frame bounds
-            if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > videoWidth || (roiY + roiHeight) > videoHeight) {
+            if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > video.videoWidth || (roiY + roiHeight) > video.videoHeight) {
                 console.warn('ROI is out of video frame bounds.');
                 showError('ROI is out of video frame bounds.');
                 stopScanning();
@@ -300,7 +303,6 @@
             }
 
             // Extract ROI from the processed image
-            const roiCanvas = document.createElement('canvas');
             roiCanvas.width = roiWidth;
             roiCanvas.height = roiHeight;
             const roiCtx = roiCanvas.getContext('2d');
@@ -308,8 +310,7 @@
             console.log('ROI extracted.');
 
             // Further preprocess ROI: scale up to improve OCR accuracy
-            const scaleFactor = 2; // Adjust as needed
-            const scaledCanvas = document.createElement('canvas');
+            const scaleFactor = 1.5; // Reduced from 2 to 1.5 for better performance
             scaledCanvas.width = roiWidth * scaleFactor;
             scaledCanvas.height = roiHeight * scaleFactor;
             const scaledCtx = scaledCanvas.getContext('2d');
@@ -321,7 +322,6 @@
             // Update the debugging canvas
             debugCanvas.width = scaledCanvas.width;
             debugCanvas.height = scaledCanvas.height;
-            const debugCtx = debugCanvas.getContext('2d');
             debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
             debugCtx.drawImage(scaledCanvas, 0, 0);
             console.log('Debugging canvas updated.');
@@ -386,8 +386,7 @@
                 stream = null;
             }
 
-            // Optionally, clear the debugging canvas
-            const debugCtx = debugCanvas.getContext('2d');
+            // Clear the debugging canvas
             debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
             console.log('Camera stream stopped and debugging canvas cleared.');
         }
