@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Optimized Camera OCR Scanner with Debugging</title>
+    <title>Reliable Camera OCR Scanner with Enhanced Filtering</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
@@ -100,7 +100,7 @@
         #debugCanvas {
             margin-top: 20px;
             border: 1px solid #000;
-            display: none; /* Hide by default */
+            display: block; /* Make visible for debugging */
             max-width: 90%;
             height: auto;
         }
@@ -116,7 +116,7 @@
             <button id="stop-button" disabled>Stop Scanner</button>
             <textarea id="output" placeholder="Extracted text will appear here..." readonly></textarea>
         </div>
-        <!-- Optional: Debugging Canvas -->
+        <!-- Debugging Canvas -->
         <canvas id="debugCanvas"></canvas>
     </div>
 
@@ -132,8 +132,8 @@
 
         let stream = null;
         let scanning = false;
-        let lastScanTime = 0;
-        const scanInterval = 2000; // Minimum interval between scans in ms
+        let scanInterval = null;
+        const MIN_CONFIDENCE = 60; // Minimum confidence percentage to accept OCR result
 
         // Function to display error messages
         function showError(message) {
@@ -200,7 +200,7 @@
                 console.log(`Confidence: ${confidence}`);
                 console.log(`Extracted Text: "${text.trim()}"`);
 
-                if (text.trim().length > 0) {
+                if (confidence >= MIN_CONFIDENCE && text.trim().length > 0) {
                     overlay.style.borderColor = 'green';
                     // Append the extracted text to the output field if not already present
                     if (!output.value.includes(text.trim())) {
@@ -218,16 +218,8 @@
 
         // Function to process frame
         async function processFrame() {
-            const now = Date.now();
-            if (now - lastScanTime < scanInterval) {
-                requestAnimationFrame(processFrame);
-                return;
-            }
-            lastScanTime = now;
-
             if (video.readyState !== video.HAVE_ENOUGH_DATA) {
                 console.warn('Video not ready');
-                requestAnimationFrame(processFrame);
                 return;
             }
 
@@ -324,7 +316,6 @@
             startButton.disabled = false;
             stopButton.disabled = true;
             startButton.innerText = 'Start Scanner';
-            lastScanTime = 0;
             // Optionally, clear the debugging canvas
             // const debugCtx = debugCanvas.getContext('2d');
             // debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
