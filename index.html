@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera OCR Scanner</title>
+    <!-- Tesseract.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            max-height: 80vh;
+            background-color: #000;
+        }
+        #overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 300px;
+            height: 200px;
+            transform: translate(-50%, -50%);
+            border: 4px solid red;
+            box-sizing: border-box;
+            pointer-events: none;
+            transition: border-color 0.3s ease;
+        }
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #start-button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 20px;
+            width: 80%;
+            max-width: 600px;
+            height: 100px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            resize: none;
+            font-size: 14px;
+        }
+        #errorMsg {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255,0,0,0.8);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 4px;
+            display: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="errorMsg"></div>
+    <div id="container">
+        <video id="video" autoplay playsinline></video>
+        <div id="overlay"></div>
+        <div id="controls">
+            <button id="start-button">Start Scanner</button>
+            <textarea id="output" placeholder="Extracted text will appear here..." readonly></textarea>
+        </div>
+    </div>
+
+    <script>
+        // References to DOM elements
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const startButton = document.getElementById('start-button');
+        const output = document.getElementById('output');
+        const errorMsg = document.getElementById('errorMsg');
+
+        let stream = null;
+        let scanning = false;
+        let scanInterval = null;
+
+        // Function to display error messages
+        function showError(message) {
+            errorMsg.innerText = message;
+            errorMsg.style.display = 'block';
+            setTimeout(() => {
+                errorMsg.style.display = 'none';
+            }, 5000);
+        }
+
+        // Function to initialize camera
+        async function initCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } },
+                    audio: false
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error(err);
+                showError('Unable to access the rear camera. Please check permissions or try a different device.');
+            }
+        }
+
+        // Function to start scanning
+        function startScanning() {
+            if (scanning) return;
+
+            scanning = true;
+            startButton.disabled = true;
+            startButton.innerText = 'Scanning...';
+
+            scanInterval = setInterval(async () => {
+                const canvas = document.createElement('canvas');
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                canvas.width = videoWidth;
+                canvas.height = videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+
+                // Define ROI dimensions based on overlay position
+                const overlayRect = overlay.getBoundingClientRect();
+                const containerRect = document.getElementById('container').getBoundingClientRect();
+
+                const roiX = overlayRect.left - containerRect.left;
+                const roiY = overlayRect.top - containerRect.top;
+                const roiWidth = overlayRect.width;
+                const roiHeight = overlayRect.height;
+
+                // Extract ROI from the video frame
+                const roiData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
+
+                // Create a temporary canvas for ROI
+                const roiCanvas = document.createElement('canvas');
+                roiCanvas.width = roiWidth;
+                roiCanvas.height = roiHeight;
+                const roiCtx = roiCanvas.getContext('2d');
+                roiCtx.putImageData(roiData, 0, 0);
+
+                try {
+                    const { data: { text } } = await Tesseract.recognize(roiCanvas, 'eng', { logger: m => console.log(m) });
+                    if (text.trim().length > 0) {
+                        overlay.style.borderColor = 'green';
+                        output.value = text;
+                    } else {
+                        overlay.style.borderColor = 'red';
+                        output.value = 'No text detected.';
+                    }
+                } catch (err) {
+                    console.error('Tesseract.js error:', err);
+                    showError('An error occurred while processing the image.');
+                    overlay.style.borderColor = 'red';
+                }
+            }, 2000); // Adjust the interval as needed
+        }
+
+        // Function to stop scanning
+        function stopScanning() {
+            scanning = false;
+            startButton.disabled = false;
+            startButton.innerText = 'Start Scanner';
+            clearInterval(scanInterval);
+            overlay.style.borderColor = 'red';
+        }
+
+        // Initialize camera on page load
+        window.addEventListener('load', initCamera);
+
+        // Handle start button click
+        startButton.addEventListener('click', () => {
+            if (!scanning) {
+                startScanning();
+            } else {
+                stopScanning();
+            }
+        });
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            clearInterval(scanInterval);
+        });
+    </script>
+</body>
+</html>
