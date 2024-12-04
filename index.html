@@ -6,104 +6,7 @@
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-        }
-        #container {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        video {
-            width: 90%;
-            max-width: 800px;
-            border: 2px solid #333;
-            border-radius: 8px;
-            background-color: #000;
-        }
-        #overlay {
-            position: absolute;
-            width: 300px;
-            height: 200px;
-            border: 4px solid red;
-            border-radius: 8px;
-            pointer-events: none;
-            transition: border-color 0.3s ease;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-        }
-        #controls {
-            margin-top: 20px;
-            text-align: center;
-        }
-        #start-button, #stop-button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            margin: 0 10px;
-            border: none;
-            border-radius: 4px;
-        }
-        #start-button {
-            background-color: #28a745;
-            color: #fff;
-        }
-        #start-button:disabled {
-            background-color: #94d3a2;
-            cursor: not-allowed;
-        }
-        #stop-button {
-            background-color: #dc3545;
-            color: #fff;
-        }
-        #stop-button:disabled {
-            background-color: #e99a9f;
-            cursor: not-allowed;
-        }
-        #output {
-            margin-top: 20px;
-            width: 90%;
-            max-width: 800px;
-            height: 150px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            resize: none;
-            font-size: 14px;
-            overflow-y: auto;
-            background-color: #fff;
-        }
-        #errorMsg {
-            position: absolute;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(255,0,0,0.9);
-            color: #fff;
-            padding: 10px 20px;
-            border-radius: 4px;
-            display: none;
-            z-index: 10;
-            font-weight: bold;
-        }
-        /* Debugging Canvas Styling */
-        #debugCanvas {
-            margin-top: 20px;
-            border: 1px solid #000;
-            display: block; /* Make visible for debugging */
-            max-width: 90%;
-            height: auto;
-        }
+        /* [Existing CSS Styles] */
     </style>
 </head>
 <body>
@@ -132,11 +35,13 @@
 
         let stream = null;
         let scanning = false;
-        let scanInterval = null;
+        let lastScanTime = 0;
+        const MIN_INTERVAL = 2000; // 2 seconds between scans
         const MIN_CONFIDENCE = 60; // Minimum confidence percentage to accept OCR result
 
         // Function to display error messages
         function showError(message) {
+            console.log(`Error: ${message}`); // Log error to console
             errorMsg.innerText = message;
             errorMsg.style.display = 'block';
             setTimeout(() => {
@@ -152,8 +57,9 @@
                     audio: false
                 });
                 video.srcObject = stream;
+                console.log('Camera initialized successfully.');
             } catch (err) {
-                console.error(err);
+                console.error('Camera initialization failed:', err);
                 showError('Unable to access the rear camera. Please check permissions or try a different device.');
             }
         }
@@ -162,6 +68,7 @@
         function preprocessImage(videoCanvas, width, height) {
             const ctx = videoCanvas.getContext('2d');
             ctx.drawImage(video, 0, 0, width, height);
+            console.log('Image drawn on videoCanvas.');
 
             // Get the image data from the canvas
             let imageData = ctx.getImageData(0, 0, width, height);
@@ -182,10 +89,12 @@
 
             // Put the processed data back onto the canvas
             ctx.putImageData(imageData, 0, 0);
+            console.log('Image preprocessing complete.');
         }
 
         // Function to perform OCR
         async function performOCR(blob) {
+            console.log('Starting OCR process.');
             try {
                 const { data: { text }, confidence } = await Tesseract.recognize(
                     blob,
@@ -197,17 +106,19 @@
                     }
                 );
 
-                console.log(`Confidence: ${confidence}`);
-                console.log(`Extracted Text: "${text.trim()}"`);
+                console.log(`OCR Confidence: ${confidence}`);
+                console.log(`OCR Extracted Text: "${text.trim()}"`);
 
                 if (confidence >= MIN_CONFIDENCE && text.trim().length > 0) {
                     overlay.style.borderColor = 'green';
                     // Append the extracted text to the output field if not already present
                     if (!output.value.includes(text.trim())) {
                         output.value += text.trim() + '\n';
+                        console.log('Text appended to output.');
                     }
                 } else {
                     overlay.style.borderColor = 'red';
+                    console.log('OCR confidence too low or no text detected.');
                 }
             } catch (err) {
                 console.error('Tesseract.js error:', err);
@@ -218,10 +129,21 @@
 
         // Function to process frame
         async function processFrame() {
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-                console.warn('Video not ready');
+            const now = Date.now();
+            if (now - lastScanTime < MIN_INTERVAL) {
+                // Skip processing if within the interval
+                requestAnimationFrame(processFrame);
                 return;
             }
+            lastScanTime = now;
+
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+                console.warn('Video not ready');
+                requestAnimationFrame(processFrame);
+                return;
+            }
+
+            console.log('Processing a new frame for OCR.');
 
             // Set canvas dimensions to match video
             const videoWidth = video.videoWidth;
@@ -248,6 +170,8 @@
             const roiWidth = overlayRect.width * scaleX;
             const roiHeight = overlayRect.height * scaleY;
 
+            console.log(`ROI Coordinates: (${roiX}, ${roiY}, ${roiWidth}, ${roiHeight})`);
+
             // Ensure ROI is within the video frame
             if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > videoWidth || (roiY + roiHeight) > videoHeight) {
                 console.warn('ROI is out of video frame bounds.');
@@ -262,9 +186,10 @@
             roiCanvas.height = roiHeight;
             const roiCtx = roiCanvas.getContext('2d');
             roiCtx.drawImage(videoCanvas, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+            console.log('ROI extracted.');
 
             // Further preprocess ROI: scale up to improve OCR accuracy
-            const scaleFactor = 2; // Reduced to 2 to balance performance and OCR accuracy
+            const scaleFactor = 2; // Adjust as needed
             const scaledCanvas = document.createElement('canvas');
             scaledCanvas.width = roiWidth * scaleFactor;
             scaledCanvas.height = roiHeight * scaleFactor;
@@ -272,19 +197,23 @@
             scaledCtx.imageSmoothingEnabled = true;
             scaledCtx.imageSmoothingQuality = 'high';
             scaledCtx.drawImage(roiCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+            console.log('ROI scaled.');
 
-            // Update the debugging canvas efficiently
+            // Update the debugging canvas
             debugCanvas.width = scaledCanvas.width;
             debugCanvas.height = scaledCanvas.height;
             const debugCtx = debugCanvas.getContext('2d');
             debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
             debugCtx.drawImage(scaledCanvas, 0, 0);
-            debugCanvas.style.display = 'block'; // Make the debugging canvas visible
+            console.log('Debugging canvas updated.');
 
             // Convert the canvas to a blob for OCR
             scaledCanvas.toBlob(async (blob) => {
                 if (blob) {
+                    console.log('Blob created for OCR.');
                     await performOCR(blob);
+                } else {
+                    console.warn('Blob conversion failed.');
                 }
                 // Schedule the next frame processing
                 requestAnimationFrame(processFrame);
@@ -304,6 +233,7 @@
             stopButton.disabled = false;
             startButton.innerText = 'Scanning...';
             output.value = ''; // Clear previous output
+            console.log('Scanning started.');
 
             requestAnimationFrame(processFrame);
         }
@@ -316,6 +246,9 @@
             startButton.disabled = false;
             stopButton.disabled = true;
             startButton.innerText = 'Start Scanner';
+            lastScanTime = 0;
+            console.log('Scanning stopped.');
+
             // Optionally, clear the debugging canvas
             // const debugCtx = debugCanvas.getContext('2d');
             // debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
