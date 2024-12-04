@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera OCR Scanner</title>
+    <title>Enhanced Camera OCR Scanner</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
@@ -56,7 +56,7 @@
             margin-top: 20px;
             width: 80%;
             max-width: 600px;
-            height: 100px;
+            height: 150px;
             padding: 10px;
             border: 1px solid #ccc;
             resize: none;
@@ -122,6 +122,31 @@
             }
         }
 
+        // Function to preprocess image for better OCR accuracy
+        function preprocessImage(ctx, width, height) {
+            // Get image data
+            let imageData = ctx.getImageData(0, 0, width, height);
+            let data = imageData.data;
+
+            // Convert to grayscale
+            for (let i = 0; i < data.length; i += 4) {
+                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = data[i + 1] = data[i + 2] = avg;
+            }
+
+            // Apply thresholding
+            for (let i = 0; i < data.length; i += 4) {
+                let brightness = data[i];
+                let threshold = 128;
+                let value = brightness > threshold ? 255 : 0;
+                data[i] = data[i + 1] = data[i + 2] = value;
+            }
+
+            // Optionally, apply more preprocessing like noise reduction here
+
+            ctx.putImageData(imageData, 0, 0);
+        }
+
         // Function to start scanning
         function startScanning() {
             if (scanning) return;
@@ -131,6 +156,11 @@
             startButton.innerText = 'Scanning...';
 
             scanInterval = setInterval(async () => {
+                if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+                    console.warn('Video not ready');
+                    return;
+                }
+
                 const canvas = document.createElement('canvas');
                 const videoWidth = video.videoWidth;
                 const videoHeight = video.videoHeight;
@@ -138,6 +168,9 @@
                 canvas.height = videoHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+
+                // Preprocess the entire frame (optional, could also preprocess ROI)
+                // preprocessImage(ctx, videoWidth, videoHeight);
 
                 // Define ROI dimensions based on overlay position
                 const overlayRect = overlay.getBoundingClientRect();
@@ -149,20 +182,35 @@
                 const roiHeight = overlayRect.height;
 
                 // Extract ROI from the video frame
-                const roiData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
+                let roiData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
 
-                // Create a temporary canvas for ROI
+                // Create a temporary canvas for ROI preprocessing
                 const roiCanvas = document.createElement('canvas');
-                roiCanvas.width = roiWidth;
-                roiCanvas.height = roiHeight;
+                const scaleFactor = 2; // Scale up for better OCR accuracy
+                roiCanvas.width = roiWidth * scaleFactor;
+                roiCanvas.height = roiHeight * scaleFactor;
                 const roiCtx = roiCanvas.getContext('2d');
-                roiCtx.putImageData(roiData, 0, 0);
+
+                // Draw the ROI scaled up
+                roiCtx.imageSmoothingEnabled = true;
+                roiCtx.imageSmoothingQuality = 'high';
+                roiCtx.drawImage(canvas, roiX, roiY, roiWidth, roiHeight, 0, 0, roiCanvas.width, roiCanvas.height);
+
+                // Preprocess the ROI
+                preprocessImage(roiCtx, roiCanvas.width, roiCanvas.height);
 
                 try {
-                    const { data: { text } } = await Tesseract.recognize(roiCanvas, 'eng', { logger: m => console.log(m) });
+                    const { data: { text }, confidence } = await Tesseract.recognize(roiCanvas, 'eng', { 
+                        logger: m => console.log(m),
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', // Optional: limit to specific characters
+                        // You can add more configuration options here
+                    });
+
+                    console.log(`Confidence: ${confidence}`);
+
                     if (text.trim().length > 0) {
                         overlay.style.borderColor = 'green';
-                        output.value = text;
+                        output.value = text.trim();
                     } else {
                         overlay.style.borderColor = 'red';
                         output.value = 'No text detected.';
