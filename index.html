@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Optimized Camera OCR Scanner</title>
+    <title>Optimized Camera OCR Scanner with Debugging</title>
     <!-- Tesseract.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
@@ -132,7 +132,8 @@
 
         let stream = null;
         let scanning = false;
-        let scanAnimationFrame = null;
+        let lastScanTime = 0;
+        const scanInterval = 2000; // Minimum interval between scans in ms
 
         // Function to display error messages
         function showError(message) {
@@ -184,67 +185,59 @@
         }
 
         // Function to perform OCR
-        async function performOCR(scaledCanvas) {
-            return new Promise((resolve, reject) => {
-                scaledCanvas.toBlob(async (blob) => {
-                    if (blob) {
-                        try {
-                            const { data: { text }, confidence } = await Tesseract.recognize(
-                                blob,
-                                'eng',
-                                { 
-                                    logger: m => console.log(m),
-                                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/-()& ',
-                                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
-                                }
-                            );
-
-                            console.log(`Confidence: ${confidence}`);
-                            console.log(`Extracted Text: "${text.trim()}"`);
-
-                            if (text.trim().length > 0) {
-                                overlay.style.borderColor = 'green';
-                                // Append the extracted text to the output field if not already present
-                                if (!output.value.includes(text.trim())) {
-                                    output.value += text.trim() + '\n';
-                                }
-                            } else {
-                                overlay.style.borderColor = 'red';
-                            }
-
-                            resolve();
-                        } catch (err) {
-                            console.error('Tesseract.js error:', err);
-                            showError('An error occurred while processing the image.');
-                            overlay.style.borderColor = 'red';
-                            reject(err);
-                        }
-                    } else {
-                        reject(new Error('Blob conversion failed.'));
+        async function performOCR(blob) {
+            try {
+                const { data: { text }, confidence } = await Tesseract.recognize(
+                    blob,
+                    'eng',
+                    { 
+                        logger: m => console.log(m),
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/-()& ',
+                        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
                     }
-                }, 'image/png');
-            });
+                );
+
+                console.log(`Confidence: ${confidence}`);
+                console.log(`Extracted Text: "${text.trim()}"`);
+
+                if (text.trim().length > 0) {
+                    overlay.style.borderColor = 'green';
+                    // Append the extracted text to the output field if not already present
+                    if (!output.value.includes(text.trim())) {
+                        output.value += text.trim() + '\n';
+                    }
+                } else {
+                    overlay.style.borderColor = 'red';
+                }
+            } catch (err) {
+                console.error('Tesseract.js error:', err);
+                showError('An error occurred while processing the image.');
+                overlay.style.borderColor = 'red';
+            }
         }
 
-        // Function to process frames
+        // Function to process frame
         async function processFrame() {
-            if (!scanning) return;
-
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-                // Try again in the next frame
-                scanAnimationFrame = requestAnimationFrame(processFrame);
+            const now = Date.now();
+            if (now - lastScanTime < scanInterval) {
+                requestAnimationFrame(processFrame);
                 return;
             }
+            lastScanTime = now;
 
-            // Create a hidden canvas for processing
-            const videoCanvas = document.createElement('canvas');
-            const videoCtx = videoCanvas.getContext('2d');
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+                console.warn('Video not ready');
+                requestAnimationFrame(processFrame);
+                return;
+            }
 
             // Set canvas dimensions to match video
             const videoWidth = video.videoWidth;
             const videoHeight = video.videoHeight;
+            const videoCanvas = document.createElement('canvas');
             videoCanvas.width = videoWidth;
             videoCanvas.height = videoHeight;
+            const videoCtx = videoCanvas.getContext('2d');
 
             // Preprocess the image (Color-Based)
             preprocessImage(videoCanvas, videoWidth, videoHeight);
@@ -279,7 +272,7 @@
             roiCtx.drawImage(videoCanvas, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
 
             // Further preprocess ROI: scale up to improve OCR accuracy
-            const scaleFactor = 2; // Reduced scale factor to improve performance
+            const scaleFactor = 2; // Reduced to 2 to balance performance and OCR accuracy
             const scaledCanvas = document.createElement('canvas');
             scaledCanvas.width = roiWidth * scaleFactor;
             scaledCanvas.height = roiHeight * scaleFactor;
@@ -288,25 +281,22 @@
             scaledCtx.imageSmoothingQuality = 'high';
             scaledCtx.drawImage(roiCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
 
-            // Optional: Display the preprocessed ROI on the debugging canvas for verification
-            // Comment out the following lines if debugging is not needed to improve performance
-            /*
+            // Update the debugging canvas efficiently
             debugCanvas.width = scaledCanvas.width;
             debugCanvas.height = scaledCanvas.height;
             const debugCtx = debugCanvas.getContext('2d');
             debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
             debugCtx.drawImage(scaledCanvas, 0, 0);
             debugCanvas.style.display = 'block'; // Make the debugging canvas visible
-            */
 
-            try {
-                await performOCR(scaledCanvas);
-            } catch (error) {
-                console.error('OCR processing failed:', error);
-            }
-
-            // Schedule the next frame processing
-            scanAnimationFrame = requestAnimationFrame(processFrame);
+            // Convert the canvas to a blob for OCR
+            scaledCanvas.toBlob(async (blob) => {
+                if (blob) {
+                    await performOCR(blob);
+                }
+                // Schedule the next frame processing
+                requestAnimationFrame(processFrame);
+            }, 'image/png');
         }
 
         // Function to start scanning
@@ -323,8 +313,7 @@
             startButton.innerText = 'Scanning...';
             output.value = ''; // Clear previous output
 
-            // Start processing frames
-            scanAnimationFrame = requestAnimationFrame(processFrame);
+            requestAnimationFrame(processFrame);
         }
 
         // Function to stop scanning
@@ -335,10 +324,11 @@
             startButton.disabled = false;
             stopButton.disabled = true;
             startButton.innerText = 'Start Scanner';
-            cancelAnimationFrame(scanAnimationFrame);
-            overlay.style.borderColor = 'red';
-            // Hide the debugging canvas if it's displayed
-            // debugCanvas.style.display = 'none';
+            lastScanTime = 0;
+            // Optionally, clear the debugging canvas
+            // const debugCtx = debugCanvas.getContext('2d');
+            // debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            // debugCanvas.style.display = 'none'; // Hide the debugging canvas
         }
 
         // Initialize camera on page load
@@ -359,7 +349,6 @@
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
-            cancelAnimationFrame(scanAnimationFrame);
         });
     </script>
 </body>
