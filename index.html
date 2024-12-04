@@ -30,6 +30,7 @@
             height: auto;
             max-height: 80vh;
             background-color: #000;
+            transform: scaleX(-1); /* Mirror the video for better UX */
         }
         #overlay {
             position: absolute;
@@ -134,15 +135,13 @@
                 data[i] = data[i + 1] = data[i + 2] = avg;
             }
 
-            // Apply thresholding
+            // Apply thresholding (binary image)
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = data[i];
                 let threshold = 128;
                 let value = brightness > threshold ? 255 : 0;
                 data[i] = data[i + 1] = data[i + 2] = value;
             }
-
-            // Optionally, apply more preprocessing like noise reduction here
 
             ctx.putImageData(imageData, 0, 0);
         }
@@ -154,6 +153,7 @@
             scanning = true;
             startButton.disabled = true;
             startButton.innerText = 'Scanning...';
+            output.value = ''; // Clear previous output
 
             scanInterval = setInterval(async () => {
                 if (video.readyState !== video.HAVE_ENOUGH_DATA) {
@@ -167,19 +167,25 @@
                 canvas.width = videoWidth;
                 canvas.height = videoHeight;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
 
-                // Preprocess the entire frame (optional, could also preprocess ROI)
-                // preprocessImage(ctx, videoWidth, videoHeight);
+                // Mirror the image to match the mirrored video display
+                ctx.translate(videoWidth, 0);
+                ctx.scale(-1, 1);
+
+                ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
 
                 // Define ROI dimensions based on overlay position
                 const overlayRect = overlay.getBoundingClientRect();
                 const containerRect = document.getElementById('container').getBoundingClientRect();
 
-                const roiX = overlayRect.left - containerRect.left;
-                const roiY = overlayRect.top - containerRect.top;
-                const roiWidth = overlayRect.width;
-                const roiHeight = overlayRect.height;
+                // Calculate scaling factors between video display size and actual video size
+                const scaleX = videoWidth / containerRect.width;
+                const scaleY = videoHeight / containerRect.height;
+
+                const roiX = (overlayRect.left - containerRect.left) * scaleX;
+                const roiY = (overlayRect.top - containerRect.top) * scaleY;
+                const roiWidth = overlayRect.width * scaleX;
+                const roiHeight = overlayRect.height * scaleY;
 
                 // Extract ROI from the video frame
                 let roiData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
@@ -194,7 +200,8 @@
                 // Draw the ROI scaled up
                 roiCtx.imageSmoothingEnabled = true;
                 roiCtx.imageSmoothingQuality = 'high';
-                roiCtx.drawImage(canvas, roiX, roiY, roiWidth, roiHeight, 0, 0, roiCanvas.width, roiCanvas.height);
+                roiCtx.putImageData(roiData, 0, 0);
+                roiCtx.drawImage(roiCanvas, 0, 0, roiCanvas.width, roiCanvas.height);
 
                 // Preprocess the ROI
                 preprocessImage(roiCtx, roiCanvas.width, roiCanvas.height);
@@ -202,25 +209,28 @@
                 try {
                     const { data: { text }, confidence } = await Tesseract.recognize(roiCanvas, 'eng', { 
                         logger: m => console.log(m),
-                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', // Optional: limit to specific characters
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ', // Allow space
                         // You can add more configuration options here
                     });
 
                     console.log(`Confidence: ${confidence}`);
+                    console.log(`Extracted Text: "${text.trim()}"`);
 
                     if (text.trim().length > 0) {
                         overlay.style.borderColor = 'green';
-                        output.value = text.trim();
+                        // Append the extracted text to the output field
+                        output.value += text.trim() + '\n';
                     } else {
                         overlay.style.borderColor = 'red';
-                        output.value = 'No text detected.';
+                        // Optionally, you can clear the output or notify the user
+                        // output.value = 'No text detected.';
                     }
                 } catch (err) {
                     console.error('Tesseract.js error:', err);
                     showError('An error occurred while processing the image.');
                     overlay.style.borderColor = 'red';
                 }
-            }, 2000); // Adjust the interval as needed
+            }, 1000); // Reduced interval to 1 second for faster scanning
         }
 
         // Function to stop scanning
