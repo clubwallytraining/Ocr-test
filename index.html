@@ -13,8 +13,9 @@
             font-family: Arial, sans-serif;
             background-color: #f0f0f0;
         }
+        /* Container Styling */
         #container {
-            position: relative;
+            position: relative; /* Ensure overlay is positioned relative to the container */
             width: 100%;
             height: 100%;
             overflow: hidden;
@@ -23,6 +24,7 @@
             align-items: center;
             justify-content: center;
         }
+        /* Video Styling */
         video {
             width: 90%;
             max-width: 800px;
@@ -30,9 +32,10 @@
             border-radius: 8px;
             background-color: #000;
         }
+        /* ROI Overlay Styling */
         #overlay {
             position: absolute;
-            width: 500px; /* Updated width for rectangle */
+            width: 500px; /* Increased width for rectangle */
             height: 200px; /* Maintained height */
             border: 4px solid red;
             border-radius: 8px;
@@ -42,10 +45,12 @@
             left: 50%;
             transform: translate(-50%, -50%);
         }
+        /* Controls Styling */
         #controls {
             margin-top: 20px;
             text-align: center;
         }
+        /* Button Styling */
         #start-button, #stop-button {
             padding: 10px 20px;
             font-size: 16px;
@@ -70,6 +75,7 @@
             background-color: #e99a9f;
             cursor: not-allowed;
         }
+        /* Output Textarea Styling */
         #output {
             margin-top: 20px;
             width: 90%;
@@ -83,6 +89,7 @@
             overflow-y: auto;
             background-color: #fff;
         }
+        /* Error Message Styling */
         #errorMsg {
             position: absolute;
             top: 10px;
@@ -161,7 +168,7 @@
             }
         }
 
-        // Function to preprocess image for better OCR accuracy (Color-Based)
+        // Function to preprocess image for better OCR accuracy
         function preprocessImage(videoCanvas, width, height) {
             const ctx = videoCanvas.getContext('2d');
             ctx.drawImage(video, 0, 0, width, height);
@@ -170,6 +177,12 @@
             // Get the image data from the canvas
             let imageData = ctx.getImageData(0, 0, width, height);
             let data = imageData.data;
+
+            // Convert to grayscale (optional)
+            for (let i = 0; i < data.length; i += 4) {
+                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = data[i + 1] = data[i + 2] = avg;
+            }
 
             // Enhance contrast (simple contrast adjustment)
             const contrastFactor = 1.3; // Adjust as needed
@@ -250,7 +263,7 @@
             videoCanvas.height = videoHeight;
             const videoCtx = videoCanvas.getContext('2d');
 
-            // Preprocess the image (Color-Based)
+            // Preprocess the image
             preprocessImage(videoCanvas, videoWidth, videoHeight);
 
             // Define ROI dimensions based on overlay position
