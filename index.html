@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Centered Rectangular OCR Scanner</title>
-    <!-- Tesseract.js CDN (Ensure using a stable version) -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+    <!-- Tesseract.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
     <style>
         /* Reset and Base Styles */
         * {
@@ -51,6 +51,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%); /* Centers the overlay */
+            display: none; /* Hidden initially */
         }
 
         /* Controls Styling */
@@ -156,7 +157,7 @@
 
         // Function to display error messages
         function showError(message) {
-            console.error(`Error: ${message}`); // Log error to console
+            console.log(`Error: ${message}`); // Log error to console
             errorMsg.innerText = message;
             errorMsg.style.display = 'block';
             setTimeout(() => {
@@ -176,6 +177,7 @@
             } catch (err) {
                 console.error('Camera initialization failed:', err);
                 showError('Unable to access the rear camera. Please check permissions or try a different device.');
+                throw err; // Rethrow to handle in caller
             }
         }
 
@@ -189,18 +191,10 @@
             let imageData = ctx.getImageData(0, 0, width, height);
             let data = imageData.data;
 
-            // Convert to grayscale
-            for (let i = 0; i < data.length; i += 4) {
-                const grayscale = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                data[i] = data[i + 1] = data[i + 2] = grayscale;
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-            console.log('Grayscale conversion complete.');
-
             // Enhance contrast (simple contrast adjustment)
             const contrastFactor = 1.3; // Adjust as needed
             for (let i = 0; i < data.length; i += 4) {
+                // Apply contrast formula
                 data[i] = ((data[i] - 128) * contrastFactor) + 128;     // R
                 data[i + 1] = ((data[i + 1] - 128) * contrastFactor) + 128; // G
                 data[i + 2] = ((data[i + 2] - 128) * contrastFactor) + 128; // B
@@ -210,19 +204,22 @@
                 data[i + 2] = Math.min(255, Math.max(0, data[i + 2]));
             }
 
+            // Put the processed data back onto the canvas
             ctx.putImageData(imageData, 0, 0);
-            console.log('Contrast enhancement complete.');
+            console.log('Image preprocessing complete.');
         }
 
         // Function to perform OCR
         async function performOCR(blob) {
             console.log('Starting OCR process.');
             try {
-                const { data: { text }, confidence } = await Tesseract.recognize(
+                const { data: { text, confidence } } = await Tesseract.recognize(
                     blob,
                     'eng',
                     { 
-                        logger: m => console.log(m) // Log progress
+                        logger: m => console.log(m), // Log progress
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/-()& ',
+                        psm: Tesseract.PSM.SINGLE_BLOCK
                     }
                 );
 
@@ -249,6 +246,8 @@
 
         // Function to process frame
         async function processFrame() {
+            if (!scanning) return; // Stop processing if not scanning
+
             const now = Date.now();
             if (now - lastScanTime < MIN_INTERVAL) {
                 // Skip processing if within the interval
@@ -292,7 +291,7 @@
 
             console.log(`ROI Coordinates: (${roiX.toFixed(2)}, ${roiY.toFixed(2)}, ${roiWidth.toFixed(2)}, ${roiHeight.toFixed(2)})`);
 
-            // Ensure ROI is within the video frame
+            // Ensure ROI is within the video frame bounds
             if (roiX < 0 || roiY < 0 || (roiX + roiWidth) > videoWidth || (roiY + roiHeight) > videoHeight) {
                 console.warn('ROI is out of video frame bounds.');
                 showError('ROI is out of video frame bounds.');
@@ -341,10 +340,20 @@
         }
 
         // Function to start scanning
-        function startScanning() {
+        async function startScanning() {
             if (scanning) return;
-            if (!stream) {
-                showError('Camera not initialized.');
+
+            startButton.disabled = true;
+            stopButton.disabled = true;
+            startButton.innerText = 'Initializing...';
+            console.log('Initializing camera...');
+
+            try {
+                await initCamera();
+            } catch (err) {
+                // Error already handled in initCamera
+                startButton.disabled = false;
+                startButton.innerText = 'Start Scanner';
                 return;
             }
 
@@ -353,6 +362,7 @@
             stopButton.disabled = false;
             startButton.innerText = 'Scanning...';
             output.value = ''; // Clear previous output
+            overlay.style.display = 'block'; // Show ROI overlay
             console.log('Scanning started.');
 
             requestAnimationFrame(processFrame);
@@ -367,11 +377,20 @@
             stopButton.disabled = true;
             startButton.innerText = 'Start Scanner';
             overlay.style.borderColor = 'red';
+            overlay.style.display = 'none'; // Hide ROI overlay
             console.log('Scanning stopped.');
-        }
 
-        // Initialize camera on page load
-        window.addEventListener('load', initCamera);
+            // Stop all video tracks
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+
+            // Optionally, clear the debugging canvas
+            const debugCtx = debugCanvas.getContext('2d');
+            debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            console.log('Camera stream stopped and debugging canvas cleared.');
+        }
 
         // Handle start button click
         startButton.addEventListener('click', () => {
