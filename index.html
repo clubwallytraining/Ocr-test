@@ -47,10 +47,15 @@
             margin-top: 20px;
             text-align: center;
         }
-        #start-button {
+        #start-button, #stop-button {
             padding: 10px 20px;
             font-size: 16px;
             cursor: pointer;
+            margin: 0 10px;
+        }
+        #stop-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
         #output {
             margin-top: 20px;
@@ -84,6 +89,7 @@
         <div id="overlay"></div>
         <div id="controls">
             <button id="start-button">Start Scanner</button>
+            <button id="stop-button" disabled>Stop Scanner</button>
             <textarea id="output" placeholder="Extracted text will appear here..." readonly></textarea>
         </div>
     </div>
@@ -93,6 +99,7 @@
         const video = document.getElementById('video');
         const overlay = document.getElementById('overlay');
         const startButton = document.getElementById('start-button');
+        const stopButton = document.getElementById('stop-button');
         const output = document.getElementById('output');
         const errorMsg = document.getElementById('errorMsg');
 
@@ -159,6 +166,7 @@
 
             scanning = true;
             startButton.disabled = true;
+            stopButton.disabled = false;
             startButton.innerText = 'Scanning...';
             output.value = ''; // Clear previous output
 
@@ -212,45 +220,50 @@
                 scaledCtx.imageSmoothingQuality = 'high';
                 scaledCtx.drawImage(roiCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
 
-                // Optional: Apply additional preprocessing on scaledCanvas if necessary
+                // Convert the canvas to a blob for OCR
+                scaledCanvas.toBlob(async (blob) => {
+                    if (blob) {
+                        try {
+                            const { data: { text }, confidence } = await Tesseract.recognize(
+                                blob,
+                                'eng',
+                                { 
+                                    logger: m => console.log(m),
+                                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/-()& ',
+                                }
+                            );
 
-                try {
-                    const { data: { text }, confidence } = await Tesseract.recognize(
-                        scaledCanvas,
-                        'eng',
-                        { 
-                            logger: m => console.log(m),
-                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/-()& ',
+                            console.log(`Confidence: ${confidence}`);
+                            console.log(`Extracted Text: "${text.trim()}"`);
+
+                            if (text.trim().length > 0) {
+                                overlay.style.borderColor = 'green';
+                                // Append the extracted text to the output field if not already present
+                                if (!output.value.includes(text.trim())) {
+                                    output.value += text.trim() + '\n';
+                                }
+                            } else {
+                                overlay.style.borderColor = 'red';
+                                // Optionally, notify the user or take other actions
+                                // output.value = 'No text detected.';
+                            }
+                        } catch (err) {
+                            console.error('Tesseract.js error:', err);
+                            showError('An error occurred while processing the image.');
+                            overlay.style.borderColor = 'red';
                         }
-                    );
-
-                    console.log(`Confidence: ${confidence}`);
-                    console.log(`Extracted Text: "${text.trim()}"`);
-
-                    if (text.trim().length > 0) {
-                        overlay.style.borderColor = 'green';
-                        // Append the extracted text to the output field if not already present
-                        if (!output.value.includes(text.trim())) {
-                            output.value += text.trim() + '\n';
-                        }
-                    } else {
-                        overlay.style.borderColor = 'red';
-                        // Optionally, notify the user or take other actions
-                        // output.value = 'No text detected.';
                     }
-                } catch (err) {
-                    console.error('Tesseract.js error:', err);
-                    showError('An error occurred while processing the image.');
-                    overlay.style.borderColor = 'red';
-                }
-
+                }, 'image/png');
             }, 1000); // Scan every 1 second
         }
 
         // Function to stop scanning
         function stopScanning() {
+            if (!scanning) return;
+
             scanning = false;
             startButton.disabled = false;
+            stopButton.disabled = true;
             startButton.innerText = 'Start Scanner';
             clearInterval(scanInterval);
             overlay.style.borderColor = 'red';
@@ -261,11 +274,12 @@
 
         // Handle start button click
         startButton.addEventListener('click', () => {
-            if (!scanning) {
-                startScanning();
-            } else {
-                stopScanning();
-            }
+            startScanning();
+        });
+
+        // Handle stop button click
+        stopButton.addEventListener('click', () => {
+            stopScanning();
         });
 
         // Clean up on page unload
